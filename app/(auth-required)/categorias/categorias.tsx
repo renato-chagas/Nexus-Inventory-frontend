@@ -15,6 +15,7 @@ interface Categoria extends CreateCategoryDTO {
 export default function Categorias() {
   const [modal, showModal] = useState(false);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [newCategory, setNewCategory] = useState<CreateCategoryDTO>({
     name: "",
     tracks_software: false,
@@ -64,9 +65,14 @@ export default function Categorias() {
     0,
   );
 
+  const filteredCategorias = categorias.filter((categoria) => {
+    const searchLower = searchTerm.toLowerCase();
+    return categoria.name.toLowerCase().includes(searchLower);
+  });
+
   return (
     <div className="min-h-screen w-full flex justify-center p-6">
-      <div className="flex flex-col w-full max-w-5xl">
+      <div className="flex flex-col w-full h-187.5">
         <div className="shadow-sm rounded-lg p-6 flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-semibold">Categorias</h2>
@@ -78,7 +84,15 @@ export default function Categorias() {
               Adicionar
             </Button>
           </div>
-          <div className="overflow-auto max-h-[350px]">
+          <div className="mb-4">
+            <Input
+              label="Buscar"
+              placeholder="Buscar por nome..."
+              value={searchTerm}
+              onChange={(value) => setSearchTerm(value)}
+            />
+          </div>
+          <div className="overflow-auto max-h-87.5">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 sticky top-0">
@@ -101,7 +115,7 @@ export default function Categorias() {
                     </td>
                   </tr>
                 ) : (
-                  categorias.map((categoria) => {
+                  filteredCategorias.map((categoria) => {
                     const porcentagem =
                       total > 0
                         ? Math.round((categoria.quantity! / total) * 100)

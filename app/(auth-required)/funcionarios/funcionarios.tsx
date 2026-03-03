@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-import { employeeService, Employee } from "@/services/models/employee.service";
+import { employeeService } from "@/services/models/employee.service";
+import { Employee } from "@/types";
 import { Button, Input } from "@/components/ui";
 
 export default function Funcionarios() {
@@ -14,12 +15,13 @@ export default function Funcionarios() {
   );
   const [editFormData, setEditFormData] = useState<Partial<Employee>>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [newEmployee, setNewEmployee] = useState<Partial<Employee>>({
     name: "",
     surname: "",
     email: "",
     phone: "",
-    department: "",
+    departament: "",
   });
 
   useEffect(() => {
@@ -41,14 +43,15 @@ export default function Funcionarios() {
     }
   };
 
-  const deleteEmployee = async (id: number) => {
-    if (confirm("Tem certeza que deseja deletar este funcionário?")) {
-      try {
-        await employeeService.delete(id);
-        setEmployees((prev) => prev.filter((emp) => emp.id !== id));
-      } catch (error) {
-        console.error("Erro ao deletar funcionário:", error);
-      }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const deleteEmployee = async (id: number | undefined) => {
+    if (!id || !confirm("Tem certeza que deseja deletar este funcionário?"))
+      return;
+    try {
+      await employeeService.delete(id);
+      setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    } catch (error) {
+      console.error("Erro ao deletar funcionário:", error);
     }
   };
 
@@ -63,7 +66,7 @@ export default function Funcionarios() {
   };
 
   const saveEditedEmployee = async () => {
-    if (!editingEmployee) return;
+    if (!editingEmployee?.id) return;
     try {
       await employeeService.patch(editingEmployee.id, editFormData);
       setEmployees((prev) =>
@@ -102,7 +105,7 @@ export default function Funcionarios() {
       surname: "",
       email: "",
       phone: "",
-      department: "",
+      departament: "",
     });
   };
 
@@ -112,7 +115,7 @@ export default function Funcionarios() {
       !newEmployee.surname ||
       !newEmployee.email ||
       !newEmployee.phone ||
-      !newEmployee.department
+      !newEmployee.departament
     ) {
       alert("Preencha todos os campos obrigatórios");
       return;
@@ -130,6 +133,16 @@ export default function Funcionarios() {
     return new Date(dateString).toLocaleDateString("pt-BR");
   };
 
+  const filteredEmployees = employees.filter((employee) => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      employee.name.toLowerCase().includes(searchLower) ||
+      employee.surname.toLowerCase().includes(searchLower) ||
+      employee.email.toLowerCase().includes(searchLower) ||
+      (employee.departament?.toLowerCase().includes(searchLower) ?? false)
+    );
+  });
+
   return (
     <div className="h-full w-full flex justify-center p-6">
       <div className="flex flex-col w-full gap-6">
@@ -145,7 +158,15 @@ export default function Funcionarios() {
               Adicionar
             </Button>
           </div>
-          <div className="overflow-auto max-h-[500px]">
+          <div className="mb-4">
+            <Input
+              label="Buscar"
+              placeholder="Buscar por nome, email ou departamento..."
+              value={searchTerm}
+              onChange={(value) => setSearchTerm(value)}
+            />
+          </div>
+          <div className="overflow-auto max-h-125">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 sticky top-0">
@@ -174,14 +195,16 @@ export default function Funcionarios() {
                       Carregando funcionários...
                     </td>
                   </tr>
-                ) : employees.length === 0 ? (
+                ) : filteredEmployees.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-4 text-center text-gray-500">
-                      Nenhum funcionário encontrado
+                      {searchTerm
+                        ? "Nenhum funcionário encontrado"
+                        : "Nenhum funcionário encontrado"}
                     </td>
                   </tr>
                 ) : (
-                  employees.map((employee) => (
+                  filteredEmployees.map((employee) => (
                     <tr key={employee.id} className="border-b hover:bg-gray-50">
                       <td className="py-3 px-4">{employee.id}</td>
                       <td className="py-3 px-4">{employee.name}</td>
@@ -190,9 +213,11 @@ export default function Funcionarios() {
                         {employee.email}
                       </td>
                       <td className="py-3 px-4">{employee.phone}</td>
-                      <td className="py-3 px-4">{employee.department}</td>
+                      <td className="py-3 px-4">{employee.departament}</td>
                       <td className="py-3 px-4">
-                        {formatDate(employee.hire_date)}
+                        {employee.hire_date
+                          ? formatDate(String(employee.hire_date))
+                          : "-"}
                       </td>
                       <td className="py-3 px-4 flex gap-2 justify-center">
                         <Button
@@ -204,7 +229,9 @@ export default function Funcionarios() {
                         </Button>
                         <Button
                           variant="danger"
-                          onClick={() => openDeleteConfirm(employee.id)}
+                          onClick={() => {
+                            if (employee.id) openDeleteConfirm(employee.id);
+                          }}
                           className="text-xs py-1 px-2"
                         >
                           Deletar
@@ -263,9 +290,9 @@ export default function Funcionarios() {
                 <Input
                   label="Departamento"
                   placeholder="Digite o departamento"
-                  value={editFormData.department || ""}
+                  value={editFormData.departament || ""}
                   onChange={(value) =>
-                    setEditFormData({ ...editFormData, department: value })
+                    setEditFormData({ ...editFormData, departament: value })
                   }
                 />
               </div>
@@ -366,9 +393,12 @@ export default function Funcionarios() {
                 <Input
                   label="Departamento"
                   placeholder="Digite o departamento"
-                  value={newEmployee.department || ""}
+                  value={newEmployee.departament || ""}
                   onChange={(value) =>
-                    setNewEmployee({ ...newEmployee, department: value })
+                    setNewEmployee({
+                      ...newEmployee,
+                      departament: value,
+                    })
                   }
                 />
               </div>

@@ -16,17 +16,19 @@ export default function Softwares() {
   const [editFormData, setEditFormData] = useState<Partial<Software>>({});
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [newSoftware, setNewSoftware] = useState({ name: "", version: "" });
 
   useEffect(() => {
     loadSoftwares();
     loadAssets();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
 
   const loadSoftwares = async () => {
     try {
       setLoading(true);
-      const response = await softwareService.getAll(accessToken);
+      const response = await softwareService.getAll(accessToken || undefined);
       const softwaresArray = Array.isArray(response)
         ? response
         : response?.results || [];
@@ -40,13 +42,13 @@ export default function Softwares() {
 
   const loadAssets = async () => {
     try {
-      const response = await assetService.getAll(accessToken);
+      const response = await assetService.getAll(accessToken || undefined);
       const assetsArray = Array.isArray(response)
         ? response
         : response?.results || [];
 
       // Adicionar fallback para installed_software se não vier do backend
-      const assetsWithDefaults = assetsArray.map((asset) => ({
+      const assetsWithDefaults = assetsArray.map((asset: Asset) => ({
         ...asset,
         installed_software: asset.installed_software || [],
       }));
@@ -88,7 +90,11 @@ export default function Softwares() {
   const saveEditedSoftware = async () => {
     if (!editingId) return;
     try {
-      await softwareService.patch(editingId, editFormData, accessToken);
+      await softwareService.patch(
+        editingId,
+        editFormData,
+        accessToken || undefined,
+      );
       setSoftwares((prev) =>
         prev.map((sw) =>
           sw.id === editingId ? { ...sw, ...editFormData } : sw,
@@ -104,7 +110,7 @@ export default function Softwares() {
 
   const deleteSoftware = async (id: number) => {
     try {
-      await softwareService.delete(id, accessToken);
+      await softwareService.delete(id, accessToken || undefined);
       setSoftwares((prev) => prev.filter((sw) => sw.id !== id));
       setDeletingId(null);
     } catch (error) {
@@ -118,7 +124,10 @@ export default function Softwares() {
       return;
     }
     try {
-      const response = await softwareService.create(newSoftware, accessToken);
+      const response = await softwareService.create(
+        newSoftware,
+        accessToken || undefined,
+      );
       setSoftwares((prev) => [...prev, response]);
       setShowCreateModal(false);
       setNewSoftware({ name: "", version: "" });
@@ -128,6 +137,14 @@ export default function Softwares() {
       console.error("Erro ao criar software:", error);
     }
   };
+
+  const filteredSoftwares = softwares.filter((software) => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      software.name.toLowerCase().includes(searchLower) ||
+      software.version.toLowerCase().includes(searchLower)
+    );
+  });
 
   if (loading) {
     return (
@@ -150,8 +167,17 @@ export default function Softwares() {
         </Button>
       </div>
 
+      <div className="mb-4">
+        <Input
+          label="Buscar"
+          placeholder="Buscar por nome ou versão..."
+          value={searchTerm}
+          onChange={(value) => setSearchTerm(value)}
+        />
+      </div>
+
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div className="overflow-auto max-h-[600px]">
+        <div className="overflow-auto max-h-150\">
           <table className="w-full border-collapse">
             <thead>
               <tr className="sticky top-0 bg-gray-50 border-b">
@@ -186,7 +212,7 @@ export default function Softwares() {
                   </td>
                 </tr>
               ) : (
-                softwares.map((software) => {
+                filteredSoftwares.map((software) => {
                   const count = countSoftwareUsage(software.id);
                   const percentage = getPercentage(count).toFixed(1);
                   return (

@@ -3,13 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { assetHistoryService } from "@/services/models/asset_history.service";
-import { assetService } from "@/services/models/assets.service";
-import { employeeService } from "@/services/models/employee.service";
-import { AssetHistory, Asset, Employee } from "@/types";
-
-interface HistoryWithAsset extends AssetHistory {
-  asset?: Asset;
-}
+import { Input } from "@/components/ui";
+import { AssetHistory } from "@/types";
 
 const ACTION_LABELS: Record<string, string> = {
   CHECKOUT: "Entregue ao funcionário",
@@ -25,80 +20,39 @@ const ACTION_COLORS: Record<string, string> = {
   DISPOSAL: "bg-red-100 text-red-700",
 };
 
+interface HistoryResponse extends AssetHistory {
+  asset_name?: string;
+  employee_name?: string;
+}
+
 export default function Historico() {
   const { accessToken } = useAuth();
-  const [history, setHistory] = useState<HistoryWithAsset[]>([]);
-  const [employees, setEmployees] = useState<Map<number, Employee>>(new Map());
+  const [history, setHistory] = useState<HistoryResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState("");
+  const [filterAsset, setFilterAsset] = useState("");
+  const [filterEmployee, setFilterEmployee] = useState("");
 
   useEffect(() => {
     loadHistory();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
 
   const loadHistory = async () => {
     try {
       setLoading(true);
 
-      // Tenta carregar o histórico diretamente
-      let allHistory: HistoryWithAsset[] = [];
+      // Carrega o histórico diretamente da API
+      const historyResponse = await assetHistoryService.getAll(
+        accessToken || undefined,
+      );
 
-      try {
-        const historyResponse = await assetHistoryService.getAll(accessToken);
-        const historyData = Array.isArray(historyResponse)
-          ? historyResponse
-          : historyResponse.results || [];
+      let allHistory: HistoryResponse[] = Array.isArray(historyResponse)
+        ? historyResponse
+        : historyResponse?.results || [];
 
-        console.log("Histórico direto:", historyData);
-
-        if (historyData.length > 0) {
-          // Se conseguiu carregar direto, carrega os ativos para ter os dados completos
-          const assetResponse = await assetService.getAll(accessToken);
-          const assets = Array.isArray(assetResponse)
-            ? assetResponse
-            : assetResponse.results || [];
-
-          const assetMap = new Map(assets.map((a) => [a.id, a]));
-
-          allHistory = historyData.map((history) => ({
-            ...history,
-            asset: assetMap.get(history.asset_id),
-          }));
-        }
-      } catch (e) {
-        console.log(
-          "Não conseguiu carregar do assetHistoryService, tentando extrair dos ativos",
-        );
-      }
-
-      // Se não encontrou histórico direto, tenta extrair dos ativos
-      if (allHistory.length === 0) {
-        const assetResponse = await assetService.getAll(accessToken);
-        const assets = Array.isArray(assetResponse)
-          ? assetResponse
-          : assetResponse.results || [];
-
-        console.log("Assets carregados:", assets);
-
-        assets.forEach((asset) => {
-          console.log("Asset:", asset.name, "Histórico:", asset.asset_history);
-          if (asset.asset_history && Array.isArray(asset.asset_history)) {
-            asset.asset_history.forEach((history) => {
-              allHistory.push({
-                ...history,
-                asset,
-              });
-            });
-          }
-        });
-      }
-
-      console.log("Histórico total:", allHistory);
-
-      // Log detalhado do primeiro item para debug
-      if (allHistory.length > 0) {
-        console.log("Primeiro item do histórico (detalhado):", allHistory[0]);
-        console.log("Campos do primeiro item:", Object.keys(allHistory[0]));
-      }
+      console.log("Histórico carregado:", allHistory);
+      console.log("Total de históricos:", allHistory.length);
 
       // Ordenar por data decrescente
       allHistory.sort((a, b) => {
@@ -108,32 +62,6 @@ export default function Historico() {
       });
 
       setHistory(allHistory);
-
-      // Carregar dados dos funcionários
-      const employeeIds = [
-        ...new Set(allHistory.map((h) => h.employee).filter(Boolean)),
-      ];
-
-      console.log("Employee IDs:", employeeIds);
-
-      if (employeeIds.length > 0) {
-        const allEmployees = await employeeService.getAll(accessToken);
-        const employees_data = Array.isArray(allEmployees)
-          ? allEmployees
-          : allEmployees.results || [];
-
-        console.log("Employees carregados:", employees_data);
-
-        const employeeMap = new Map<number, Employee>();
-        employeeIds.forEach((id) => {
-          const emp = employees_data.find((e) => e.id === id);
-          if (emp) {
-            employeeMap.set(id, emp);
-          }
-        });
-
-        setEmployees(employeeMap);
-      }
     } catch (error) {
       console.error("Erro ao carregar histórico:", error);
     } finally {
@@ -156,6 +84,32 @@ export default function Historico() {
     }
   };
 
+  const formatDateForInput = (dateString: string | Date) => {
+    try {
+      const date = new Date(dateString);
+      return date.toISOString().split("T")[0];
+    } catch {
+      return "";
+    }
+  };
+
+  const filteredHistory = history.filter((item) => {
+    const matchDate =
+      !filterDate ||
+      formatDateForInput(item.action_date).startsWith(filterDate);
+    const matchAsset =
+      !filterAsset ||
+      (item.asset_name?.toLowerCase() || "").includes(
+        filterAsset.toLowerCase(),
+      );
+    const matchEmployee =
+      !filterEmployee ||
+      (item.employee_name?.toLowerCase() || "").includes(
+        filterEmployee.toLowerCase(),
+      );
+    return matchDate && matchAsset && matchEmployee;
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -170,8 +124,29 @@ export default function Historico() {
         <h1 className="text-2xl font-bold">Histórico de Ativos</h1>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <Input
+          label="Filtrar por Data"
+          type="date"
+          value={filterDate}
+          onChange={(value) => setFilterDate(value)}
+        />
+        <Input
+          label="Filtrar por Ativo"
+          placeholder="Nome do ativo..."
+          value={filterAsset}
+          onChange={(value) => setFilterAsset(value)}
+        />
+        <Input
+          label="Filtrar por Responsável"
+          placeholder="Nome do funcionário..."
+          value={filterEmployee}
+          onChange={(value) => setFilterEmployee(value)}
+        />
+      </div>
+
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div className="overflow-auto max-h-[600px]">
+        <div className="overflow-auto max-h-150">
           <table className="w-full border-collapse">
             <thead>
               <tr className="sticky top-0 bg-gray-50 border-b">
@@ -196,57 +171,47 @@ export default function Historico() {
               </tr>
             </thead>
             <tbody>
-              {history.length === 0 ? (
+              {filteredHistory.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
                     className="px-6 py-8 text-center text-gray-500"
                   >
-                    Nenhum histórico encontrado
+                    {filterDate || filterAsset || filterEmployee
+                      ? "Nenhum resultado encontrado com os filtros aplicados"
+                      : "Nenhum histórico encontrado"}
                   </td>
                 </tr>
               ) : (
-                history.map((item, idx) => {
-                  const employee = employees.get(item.employee || 0);
-                  if (idx === 0) {
-                    console.log("Item renderizado:", item);
-                    console.log("Employee encontrado:", employee);
-                    console.log("Item.employee (ID):", item.employee);
-                  }
-                  return (
-                    <tr
-                      key={item.id}
-                      className="border-b hover:bg-gray-50 transition"
-                    >
-                      <td className="px-6 py-3 text-sm text-gray-900">
-                        {item.id}
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-900">
-                        {item.asset?.name || `Ativo #${item.asset_id}`}
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-900">
-                        {formatDate(item.action_date)}
-                      </td>
-                      <td className="px-6 py-3 text-sm">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${ACTION_COLORS[item.action_type]}`}
-                        >
-                          {ACTION_LABELS[item.action_type]}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-900">
-                        {employee
-                          ? `${employee.name} ${employee.surname}`
-                          : item.employee
-                            ? `Funcionário #${item.employee}`
-                            : "Sem informação"}
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-600">
-                        {item.observaitions || "-"}
-                      </td>
-                    </tr>
-                  );
-                })
+                filteredHistory.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="border-b hover:bg-gray-50 transition"
+                  >
+                    <td className="px-6 py-3 text-sm text-gray-900">
+                      {item.id}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-900">
+                      {item.asset_name || `Ativo #${item.asset}`}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-900">
+                      {formatDate(item.action_date)}
+                    </td>
+                    <td className="px-6 py-3 text-sm">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${ACTION_COLORS[item.action_type]}`}
+                      >
+                        {ACTION_LABELS[item.action_type]}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-900">
+                      {item.employee_name || `Funcionário #${item.employee}`}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-600">
+                      {item.observaitions || "-"}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

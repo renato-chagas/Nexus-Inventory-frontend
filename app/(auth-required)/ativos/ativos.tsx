@@ -10,12 +10,12 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-import { assetService, Asset } from "@/services/models/assets.service";
+import { assetService } from "@/services/models/assets.service";
 import { employeeService } from "@/services/models/employee.service";
 import { softwareService } from "@/services/models/software.service";
 import { useAuth } from "@/context/AuthContext";
 import { Button, Input, Select } from "@/components/ui";
-import { Employee, Software } from "@/types";
+import { Employee, Software, Asset } from "@/types";
 
 export default function Ativos() {
   const { accessToken } = useAuth();
@@ -27,9 +27,10 @@ export default function Ativos() {
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Asset>>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [newAsset, setNewAsset] = useState<Partial<Asset>>({
     name: "",
-    person_in_charge_id: null,
+    person_in_charge_id: undefined,
     status: "AVAILABLE",
     specs: "",
     installed_software: [],
@@ -39,11 +40,12 @@ export default function Ativos() {
     loadAssets();
     loadEmployees();
     loadSoftwares();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
 
   const loadSoftwares = async () => {
     try {
-      const response = await softwareService.getAll(accessToken);
+      const response = await softwareService.getAll(accessToken || undefined);
       const softwaresArray = Array.isArray(response)
         ? response
         : response?.results || [];
@@ -55,7 +57,7 @@ export default function Ativos() {
 
   const loadEmployees = async () => {
     try {
-      const response = await employeeService.getAll(accessToken);
+      const response = await employeeService.getAll(accessToken || undefined);
       const employeesArray = Array.isArray(response)
         ? response
         : response?.results || [];
@@ -73,7 +75,7 @@ export default function Ativos() {
         : response?.results || [];
 
       // Adicionar fallback para installed_software se não vier do backend
-      const assetsWithDefaults = assetsArray.map((asset) => ({
+      const assetsWithDefaults = assetsArray.map((asset: Asset) => ({
         ...asset,
         installed_software: asset.installed_software || [],
       }));
@@ -88,15 +90,9 @@ export default function Ativos() {
     }
   };
 
-  const deleteAsset = async (id: number) => {
-    if (confirm("Tem certeza que deseja deletar este ativo?")) {
-      try {
-        await assetService.delete(id);
-        setAssets((prev) => prev.filter((asset) => asset.id !== id));
-      } catch (error) {
-        console.error("Erro ao deletar ativo:", error);
-      }
-    }
+  const closeEditModal = () => {
+    setEditingAsset(null);
+    setEditFormData({});
   };
 
   const openEditModal = (asset: Asset) => {
@@ -104,13 +100,8 @@ export default function Ativos() {
     setEditFormData(asset);
   };
 
-  const closeEditModal = () => {
-    setEditingAsset(null);
-    setEditFormData({});
-  };
-
   const saveEditedAsset = async () => {
-    if (!editingAsset) return;
+    if (!editingAsset?.id) return;
     try {
       // Enviar apenas os campos que devem ser atualizados
       const dataToSend = {
@@ -119,9 +110,13 @@ export default function Ativos() {
         status: editFormData.status,
         specs: editFormData.specs,
         installed_software:
-          editFormData.installed_software?.map((sw) => sw.id) || [],
+          editFormData.installed_software?.map((sw: Software) => sw.id) || [],
       };
-      await assetService.patch(editingAsset.id, dataToSend, accessToken);
+      await assetService.patch(
+        editingAsset.id,
+        dataToSend as unknown as Partial<Asset>,
+        accessToken || undefined,
+      );
       // Recarregar assets para trazer dados atualizados do backend
       await loadAssets();
       closeEditModal();
@@ -130,14 +125,14 @@ export default function Ativos() {
     }
   };
 
-  const openDeleteConfirm = (id: number) => {
-    setDeletingAssetId(id);
+  const openDeleteConfirm = (id: number | undefined) => {
+    if (id) setDeletingAssetId(id);
   };
 
   const confirmDelete = async () => {
     if (deletingAssetId) {
       try {
-        await assetService.delete(deletingAssetId, accessToken);
+        await assetService.delete(deletingAssetId, accessToken || undefined);
         setAssets((prev) =>
           prev.filter((asset) => asset.id !== deletingAssetId),
         );
@@ -152,7 +147,7 @@ export default function Ativos() {
     setShowCreateModal(false);
     setNewAsset({
       name: "",
-      person_in_charge_id: null,
+      person_in_charge_id: undefined,
       status: "AVAILABLE",
       specs: "",
       installed_software: [],
@@ -169,11 +164,11 @@ export default function Ativos() {
       const dataToSend = {
         ...newAsset,
         installed_software:
-          newAsset.installed_software?.map((sw) => sw.id) || [],
+          newAsset.installed_software?.map((sw: Software) => sw.id) || [],
       };
       const response = await assetService.create(
-        dataToSend as Asset,
-        accessToken,
+        dataToSend as unknown as Asset,
+        accessToken || undefined,
       );
       setAssets((prev) => [...prev, response]);
       closeCreateModal();
@@ -213,8 +208,8 @@ export default function Ativos() {
   };
 
   const getSoftwareInstallCount = (softwareId: number): number => {
-    return assets.filter((asset) =>
-      asset.installed_software?.some((sw) => sw.id === softwareId),
+    return assets.filter((asset: Asset) =>
+      asset.installed_software?.some((sw: Software) => sw.id === softwareId),
     ).length;
   };
 
@@ -247,6 +242,16 @@ export default function Ativos() {
         return status;
     }
   };
+
+  const filteredAssets = assets.filter((asset: Asset) => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      asset.name.toLowerCase().includes(searchLower) ||
+      getStatusLabel(asset.status || "")
+        .toLowerCase()
+        .includes(searchLower)
+    );
+  });
 
   return (
     <div className="min-h-screen w-full flex flex-col p-6">
@@ -329,7 +334,15 @@ export default function Ativos() {
               Adicionar
             </Button>
           </div>
-          <div className="overflow-auto max-h-[350px]">
+          <div className="mb-4">
+            <Input
+              label="Buscar"
+              placeholder="Buscar por nome ou status..."
+              value={searchTerm}
+              onChange={(value) => setSearchTerm(value)}
+            />
+          </div>
+          <div className="overflow-auto max-h-87.5">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
@@ -349,14 +362,16 @@ export default function Ativos() {
                       Carregando ativos...
                     </td>
                   </tr>
-                ) : assets.length === 0 ? (
+                ) : filteredAssets.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-4 text-center text-gray-500">
-                      Nenhum ativo encontrado
+                      {searchTerm
+                        ? "Nenhum ativo encontrado"
+                        : "Nenhum ativo encontrado"}
                     </td>
                   </tr>
                 ) : (
-                  assets.map((asset) => (
+                  filteredAssets.map((asset) => (
                     <tr key={asset.id} className="border-b hover:bg-gray-50">
                       <td className="py-3 px-4">{asset.id}</td>
                       <td className="py-3 px-4">{asset.name}</td>
@@ -364,10 +379,10 @@ export default function Ativos() {
                       <td className="py-3 px-4">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            asset.status,
+                            asset.status || "",
                           )}`}
                         >
-                          {getStatusLabel(asset.status)}
+                          {getStatusLabel(asset.status || "")}
                         </span>
                       </td>
                       <td className="py-3 px-4 flex gap-2 justify-center">
@@ -417,7 +432,7 @@ export default function Ativos() {
                   onChange={(value) =>
                     setEditFormData({
                       ...editFormData,
-                      person_in_charge_id: value ? parseInt(value) : null,
+                      person_in_charge_id: value ? parseInt(value) : undefined,
                     })
                   }
                   options={[
@@ -453,10 +468,10 @@ export default function Ativos() {
                   <label className="text-sm font-semibold text-gray-700">
                     Softwares Instalados
                   </label>
-                  <div className="mt-2 space-y-2 max-h-[200px] overflow-auto">
+                  <div className="mt-2 space-y-2 max-h-50 overflow-auto">
                     {softwares.map((software) => {
                       const isSelected = editFormData.installed_software?.some(
-                        (sw) => sw.id === software.id,
+                        (sw: Software) => sw.id === software.id,
                       );
                       const installCount = getSoftwareInstallCount(software.id);
                       return (
@@ -481,12 +496,12 @@ export default function Ativos() {
                                   ...editFormData,
                                   installed_software:
                                     editFormData.installed_software?.filter(
-                                      (sw) => sw.id !== software.id,
+                                      (sw: Software) => sw.id !== software.id,
                                     ),
                                 });
                               }
                             }}
-                            className="w-4 h-4 cursor-pointer flex-shrink-0"
+                            className="\w-4 h-4 cursor-pointer shrink-0\"
                           />
                           <span className="text-sm text-gray-700 flex-1">
                             {software.name} v{software.version}
@@ -575,7 +590,7 @@ export default function Ativos() {
                   onChange={(value) =>
                     setNewAsset({
                       ...newAsset,
-                      person_in_charge_id: value ? parseInt(value) : null,
+                      person_in_charge_id: value ? parseInt(value) : undefined,
                     })
                   }
                   options={[
@@ -611,10 +626,10 @@ export default function Ativos() {
                   <label className="text-sm font-semibold text-gray-700">
                     Softwares Instalados
                   </label>
-                  <div className="mt-2 space-y-2 max-h-[200px] overflow-auto">
+                  <div className="mt-2 space-y-2 max-h-50 overflow-auto">
                     {softwares.map((software) => {
                       const isSelected = newAsset.installed_software?.some(
-                        (sw) => sw.id === software.id,
+                        (sw: Software) => sw.id === software.id,
                       );
                       const installCount = getSoftwareInstallCount(software.id);
                       return (
@@ -639,12 +654,12 @@ export default function Ativos() {
                                   ...newAsset,
                                   installed_software:
                                     newAsset.installed_software?.filter(
-                                      (sw) => sw.id !== software.id,
+                                      (sw: Software) => sw.id !== software.id,
                                     ),
                                 });
                               }
                             }}
-                            className="w-4 h-4 cursor-pointer flex-shrink-0"
+                            className="w-4 h-4 cursor-pointer shrink-0\"
                           />
                           <span className="text-sm text-gray-700 flex-1">
                             {software.name} v{software.version}
